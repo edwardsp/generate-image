@@ -47,6 +47,10 @@ exits non-zero with the API error text on failure. If the filename has no extens
 - `--out`, `-o` — output file path (required; `.png` added if missing)
 - `--size`, `-s` — `1024x1024` (default), `1024x1536`, `1536x1024`, or `auto`
 - `--quality`, `-q` — `high` (default), `medium`, `low`, or `auto`
+- `--image`, `-i` — input image to edit (repeatable). When supplied, the script uses
+  the `/images/edits` endpoint (img2img) to transform the source instead of generating
+  from scratch — the composition is preserved.
+- `--mask` — optional PNG mask for inpainting (only used with `--image`).
 
 ### Config overrides (env)
 
@@ -65,6 +69,11 @@ python3 ~/.config/opencode/skills/generate-image/scripts/generate_image.py \
 # Quick square icon
 python3 ~/.config/opencode/skills/generate-image/scripts/generate_image.py \
   "flat minimalist rocket icon, single color" rocket.png
+
+# Edit an existing image (img2img) — keep the scene, change one thing
+python3 ~/.config/opencode/skills/generate-image/scripts/generate_image.py \
+  -p "keep the scene identical but turn the night sky to early dawn" \
+  -i title.png -o title-dawn.png -s 1536x1024 -q high
 ```
 
 ## Notes
@@ -73,3 +82,5 @@ python3 ~/.config/opencode/skills/generate-image/scripts/generate_image.py \
   base64 payload.
 - `gpt-image-2` returns base64 image data (no hosted URL); the script decodes and
   writes the bytes for you.
+- With `--image`, the script calls `/images/edits` (multipart upload) instead of
+  `/images/generations`; the success line reads `OK: edited ...`.
