@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate or edit an image with Azure AI Foundry (gpt-image-2) and save it to a file.
+"""Generate or edit an image with Azure AI Foundry and save it to a file.
 
 Usage:
   generate_image.py --prompt "PROMPT" --out FILENAME [--size SIZE] [--quality Q]
@@ -10,8 +10,10 @@ Usage:
 Options:
   --prompt, -p    Text prompt describing the image (required)
   --out, -o       Output file path. Extension .png is added if missing (required)
-  --size, -s      1024x1024 (default) | 1024x1536 | 1536x1024 | auto
-  --quality, -q   high (default) | medium | low | auto
+  --model, -m     flare (default) | sunburst | gpt-image-2 (full model IDs also work)
+  --deployment   Custom Azure deployment name (overrides model/env deployment)
+  --size, -s      1024x1024 (default) | auto | WIDTHxHEIGHT (e.g. 1536x864)
+  --quality, -q   high (default) | medium | low | auto | xhigh/max (2.5 models only)
   --image, -i     Input image to edit (repeatable). When supplied, the /images/edits
                   endpoint is used instead of /images/generations (img2img).
   --mask          Optional mask PNG for inpainting (only used with --image).
@@ -19,18 +21,19 @@ Options:
 Credentials/config (env, with sensible defaults):
   AZURE_OPENAI_API_KEY            required (auto-sourced from ~/ai-models-out/foundry.env)
   AZURE_OPENAI_ENDPOINT          default https://paul-ai-models.cognitiveservices.azure.com/
-  AZURE_OPENAI_IMAGE_DEPLOYMENT  default gpt-image-2
+  AZURE_OPENAI_IMAGE_DEPLOYMENT  default gpt-image-2.5-flare
   AZURE_OPENAI_IMAGE_API_VERSION default 2025-04-01-preview
 """
-import argparse
 import base64
 import json
 import os
 import re
 import sys
-import uuid
-import urllib.request
 import urllib.error
+import urllib.request
+import uuid
+
+from image_options import ImageOptions, parse_args
 
 FOUNDRY_ENV = os.path.expanduser("~/ai-models-out/foundry.env")
 
@@ -52,35 +55,6 @@ def load_env_file(path):
             m = pat.match(line)
             if m and m.group(1) not in os.environ:
                 os.environ[m.group(1)] = m.group(2)
-
-
-def parse_args(argv):
-    ap = argparse.ArgumentParser(add_help=True)
-    ap.add_argument("--prompt", "-p")
-    ap.add_argument("--out", "-o", "--output")
-    ap.add_argument("--size", "-s", default="1024x1024")
-    ap.add_argument("--quality", "-q", default="high")
-    ap.add_argument("--image", "-i", action="append", default=[],
-                    help="input image to edit (repeatable); enables img2img")
-    ap.add_argument("--mask", help="optional mask PNG for inpainting (with --image)")
-    ap.add_argument("pos", nargs="*", help="positional: PROMPT OUTFILE")
-    a = ap.parse_args(argv)
-    if not a.prompt and len(a.pos) >= 1:
-        a.prompt = a.pos[0]
-    if not a.out and len(a.pos) >= 2:
-        a.out = a.pos[1]
-    if not a.prompt or not a.out:
-        ap.error("both a prompt and an output filename are required")
-    if not os.path.splitext(a.out)[1]:
-        a.out += ".png"
-    for p in a.image:
-        if not os.path.isfile(p):
-            ap.error("input image not found: %s" % p)
-    if a.mask and not os.path.isfile(a.mask):
-        ap.error("mask not found: %s" % a.mask)
-    if a.mask and not a.image:
-        ap.error("--mask requires at least one --image")
-    return a
 
 
 def _mime_for(path):
@@ -113,7 +87,9 @@ def encode_multipart(fields, files):
     return "multipart/form-data; boundary=%s" % boundary, b"".join(buf)
 
 
-def build_generation_request(url, key, args):
+def build_generation_request(
+    url: str, key: str, args: ImageOptions,
+) -> urllib.request.Request:
     payload = json.dumps(
         {"prompt": args.prompt, "size": args.size, "quality": args.quality, "n": 1}
     ).encode()
@@ -125,7 +101,9 @@ def build_generation_request(url, key, args):
     )
 
 
-def build_edit_request(url, key, args):
+def build_edit_request(
+    url: str, key: str, args: ImageOptions,
+) -> urllib.request.Request:
     fields = [("prompt", args.prompt), ("size", args.size), ("quality", args.quality), ("n", 1)]
     files = []
     # When more than one image is supplied, use the image[] array field name.
@@ -146,8 +124,8 @@ def build_edit_request(url, key, args):
 
 
 def main(argv):
-    args = parse_args(argv)
     load_env_file(FOUNDRY_ENV)
+    args = parse_args(argv)
 
     key = os.environ.get("AZURE_OPENAI_API_KEY")
     if not key:
@@ -156,7 +134,7 @@ def main(argv):
     endpoint = os.environ.get(
         "AZURE_OPENAI_ENDPOINT", "https://paul-ai-models.cognitiveservices.azure.com/"
     ).rstrip("/")
-    deployment = os.environ.get("AZURE_OPENAI_IMAGE_DEPLOYMENT", "gpt-image-2")
+    deployment = args.deployment
     api_version = os.environ.get("AZURE_OPENAI_IMAGE_API_VERSION", "2025-04-01-preview")
 
     mode = "edits" if args.image else "generations"
@@ -186,7 +164,8 @@ def main(argv):
 
     size_kb = os.path.getsize(out) // 1024
     verb = "edited" if args.image else "saved"
-    print(f"OK: {verb} {args.size} image -> {out} ({size_kb} KB)")
+    print(f"OK: {verb} {args.size} image -> {out} "
+          f"({size_kb} KB; deployment={deployment})")
 
 
 if __name__ == "__main__":
