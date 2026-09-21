@@ -1,7 +1,8 @@
 # generate-image
 
 An [OpenCode](https://opencode.ai) **skill** that generates an image from a text
-prompt using Azure AI Foundry (`gpt-image-2`) and saves it to a file.
+prompt — or **edits an existing image** (img2img) — using Azure AI Foundry
+(`gpt-image-2`) and saves it to a file.
 
 ## Install
 
@@ -48,6 +49,21 @@ python3 scripts/generate_image.py "PROMPT TEXT" FILENAME
 Options: `--size` (`1024x1024` default, `1024x1536`, `1536x1024`, `auto`) ·
 `--quality` (`high` default, `medium`, `low`, `auto`). If the filename has no
 extension, `.png` is appended.
+
+### Edit an existing image (img2img)
+
+Pass one or more input images with `--image` / `-i` to transform them instead of
+generating from scratch. This routes to the `/images/edits` endpoint and preserves
+the source composition — ideal for "keep the scene, change one thing":
+
+```bash
+python3 scripts/generate_image.py \
+  -p "keep the scene identical but turn the night sky to early dawn" \
+  -i title.png -o title-dawn.png -s 1536x1024 -q high
+```
+
+`--image` is repeatable (multiple references), and `--mask` supplies an optional
+PNG mask for inpainting.
 
 See [`SKILL.md`](SKILL.md) for full details and examples.
 
